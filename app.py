@@ -610,7 +610,7 @@ def main():
         log_container = st.empty()
 
         def logger(msg):
-            log_container.write(str(msg)))
+            log_container.write(str(msg))
 
         # Define models (POC hyperparameters)
         models = [

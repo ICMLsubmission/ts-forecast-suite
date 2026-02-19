@@ -101,13 +101,25 @@ st.sidebar.header("2️⃣ Basic Settings")
 datetime_col = st.sidebar.selectbox("Datetime column", df.columns)
 target_col = st.sidebar.selectbox("Target column to forecast", df.columns)
 
+# Basic validation: datetime and target must be different
+if datetime_col == target_col:
+    st.error("❗ Datetime column and target column must be different. "
+             "Please choose a numeric target column (e.g., value, sales, etc.).")
+    st.stop()
+
 # Convert and sort
 df[datetime_col] = pd.to_datetime(df[datetime_col], errors="coerce")
 df = df.dropna(subset=[datetime_col])
 df = df.sort_values(datetime_col)
+
+# Build the target series with datetime index BEFORE setting index on df
+y_raw = pd.to_numeric(df[target_col], errors="coerce")
+mask = ~y_raw.isna()
+y = pd.Series(y_raw[mask].values, index=df[datetime_col][mask])
+
+# Set index on df for preview / EDA
 df = df.set_index(datetime_col)
 
-y = df[target_col].astype(float)
 
 st.write("#### Data Preview")
 st.dataframe(df[[target_col]].head())

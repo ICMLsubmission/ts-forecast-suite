@@ -1,8 +1,9 @@
 streamlit
-numpy
 pandas
+numpy
 matplotlib
 statsmodels
-xgboost
-tensorflow
 scikit-learn
+xgboost
+tensorflow-cpu
+pmdarima

@@ -1,19 +1,21 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+
 from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.tsa.stattools import adfuller, kpss, acf, pacf
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.graphics.tsaplots import plot_acf as sm_plot_acf, plot_pacf as sm_plot_pacf
+from scipy.fft import fft
 import streamlit as st
 
-
 # -------------------------------
-# Basic plots
+# Time Series EDA Utilities
 # -------------------------------
 
 def plot_time_series(y: pd.Series):
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(y.index, y.values, color="blue")
-    ax.set_title("Time Series (Train)")
+    ax.set_title("Time Series")
     ax.set_xlabel("Time")
     ax.set_ylabel("Value")
     ax.grid(True)
@@ -24,112 +26,96 @@ def plot_time_series(y: pd.Series):
 def plot_histogram(y: pd.Series):
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.hist(y.values, bins=30, color="gray", edgecolor="black")
-    ax.set_title("Distribution (Train)")
-    ax.set_xlabel("Value")
-    ax.set_ylabel("Frequency")
+    ax.set_title("Distribution")
     fig.tight_layout()
     return fig
 
 
-def plot_acf_pacf(y, lags=40):
-    from statsmodels.tsa.stattools import acf, pacf
-
-    # Ensure series is long enough
+def plot_acf_pacf(y: pd.Series, lags: int = 40):
+    """
+    ACF & PACF using statsmodels' built-in plotting functions.
+    This avoids matplotlib stem() quirks and is much more robust.
+    """
     y = pd.Series(y).dropna()
     if len(y) < 10:
-        fig, ax = plt.subplots(figsize=(10, 2))
-        ax.text(0.5, 0.5, "Not enough data for ACF/PACF", ha="center")
+        fig, ax = plt.subplots(figsize=(8, 2))
+        ax.text(0.5, 0.5, "Not enough data for ACF/PACF (need >= 10 points).",
+                ha="center", va="center")
         ax.set_axis_off()
+        fig.tight_layout()
         return fig
 
-    # Safe ACF/PACF computation
-    try:
-        ac_vals = acf(y, nlags=min(lags, len(y) // 2), fft=False)
-        pac_vals = pacf(y, nlags=min(lags, len(y) // 2), method='ywunbiased')
-    except Exception as e:
-        fig, ax = plt.subplots(figsize=(10, 2))
-        ax.text(0.5, 0.5, f"ACF/PACF failed: {e}", ha="center")
-        ax.set_axis_off()
-        return fig
-
-    # Clean arrays (remove NaN, keep same length)
-    ac_vals = np.nan_to_num(ac_vals)
-    pac_vals = np.nan_to_num(pac_vals)
-
-    x_ac = np.arange(len(ac_vals)).astype(float)
-    x_pac = np.arange(len(pac_vals)).astype(float)
+    max_lags = min(lags, len(y) // 2)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    try:
+        sm_plot_acf(y, lags=max_lags, ax=axes[0])
+        axes[0].set_title("ACF")
+        axes[0].grid(True)
+    except Exception as e:
+        axes[0].text(0.5, 0.5, f"ACF failed: {e}", ha="center", va="center")
+        axes[0].set_axis_off()
 
-    # ACF
-    axes[0].stem(x_ac, ac_vals, linefmt='b-', markerfmt='bo', basefmt='k-')
-    axes[0].set_title("ACF")
-    axes[0].grid(True)
+    try:
+        sm_plot_pacf(y, lags=max_lags, ax=axes[1], method="ywunbiased")
+        axes[1].set_title("PACF")
+        axes[1].grid(True)
+    except Exception as e:
+        axes[1].text(0.5, 0.5, f"PACF failed: {e}", ha="center", va="center")
+        axes[1].set_axis_off()
 
-    # PACF
-    axes[1].stem(x_pac, pac_vals, linefmt='r-', markerfmt='ro', basefmt='k-')
-    axes[1].set_title("PACF")
-    axes[1].grid(True)
-
+    fig.tight_layout()
     return fig
 
 
-
-# -------------------------------
-# ETS decomposition
-# -------------------------------
-
 def ets_decomposition(y: pd.Series, period: int = None):
-    if period is None:
-        # fallback: 10% of length, at least 2
-        period = max(2, int(len(y) * 0.1))
-
+    """
+    Seasonal decomposition using additive model.
+    """
+    if period is None or period < 2:
+        period = max(2, min(len(y) // 5, 60))
     result = seasonal_decompose(y, model="additive", period=period)
     return result
 
 
-def plot_ets_decomposition(result):
-    fig = result.plot()
-    fig.set_size_inches(10, 8)
-    fig.tight_layout()
-    return fig
-
-
-# -------------------------------
-# Fourier / frequency analysis
-# -------------------------------
-
 def plot_fft(y: pd.Series):
+    """
+    Simple Fourier spectrum.
+    """
+    y = pd.Series(y).dropna()
     n = len(y)
-    y_centered = y - y.mean()
-    fft_vals = np.fft.fft(y_centered)
-    freqs = np.fft.fftfreq(n)
+    if n < 4:
+        fig, ax = plt.subplots(figsize=(8, 2))
+        ax.text(0.5, 0.5, "Not enough data for FFT (need >= 4 points).",
+                ha="center", va="center")
+        ax.set_axis_off()
+        fig.tight_layout()
+        return fig
 
-    # Only positive frequencies
-    mask = freqs > 0
-    freqs = freqs[mask]
-    power = np.abs(fft_vals[mask])
+    yf = fft(y.values)
+    xf = np.fft.fftfreq(n)
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(freqs, power)
-    ax.set_title("Fourier Spectrum (Train)")
+    ax.plot(xf[: n // 2], np.abs(yf[: n // 2]))
+    ax.set_title("Fourier Transform Spectrum")
     ax.set_xlabel("Frequency")
     ax.set_ylabel("Amplitude")
+    ax.grid(True)
     fig.tight_layout()
     return fig
 
-
-# -------------------------------
-# Stationarity & seasonality
-# -------------------------------
 
 def stationarity_tests(y: pd.Series):
     """
-    Returns p-values for ADF and KPSS.
-    ADF: H0 = non-stationary (unit root present)
-    KPSS: H0 = stationary
+    Run ADF and KPSS tests and return p-values.
     """
-    adf_stat, adf_p, *_ = adfuller(y)
+    y = pd.Series(y).dropna()
+
+    try:
+        adf_stat, adf_p, *_ = adfuller(y)
+    except Exception:
+        adf_p = np.nan
+
     try:
         kpss_stat, kpss_p, *_ = kpss(y, nlags="auto")
     except Exception:
@@ -138,42 +124,28 @@ def stationarity_tests(y: pd.Series):
     return {"ADF_p": adf_p, "KPSS_p": kpss_p}
 
 
-def interpret_stationarity(adf_p: float, kpss_p: float, alpha: float = 0.05):
+def detect_seasonality(y: pd.Series):
     """
-    Simple text interpretation combining ADF and KPSS.
+    Very simple seasonality detection using autocorrelation peaks.
     """
-    adf_stationary = adf_p < alpha
-    kpss_stationary = (np.isnan(kpss_p) or kpss_p > alpha)
+    from statsmodels.tsa.stattools import acf
 
-    if adf_stationary and kpss_stationary:
-        msg = "Series is **likely stationary** (ADF rejects unit root, KPSS does not reject stationarity)."
-    elif (not adf_stationary) and (not kpss_stationary):
-        msg = "Both ADF and KPSS suggest **non-stationarity**. Differencing is likely needed."
-    elif not adf_stationary and kpss_stationary:
-        msg = "Mixed evidence, but leaning **non-stationary** (ADF does not reject unit root)."
-    else:
-        msg = "Mixed evidence, but leaning **stationary** (ADF rejects unit root)."
+    y = pd.Series(y).dropna()
+    if len(y) < 20:
+        return {"seasonal": False, "period_guess": 0}
 
-    return msg
+    ac_values = acf(y, nlags=min(60, len(y) // 2))
+    # ignore lag 0 (always 1.0)
+    lags = np.arange(len(ac_values))
+    lags = lags[1:]
+    ac_values = ac_values[1:]
 
-
-def detect_seasonality(y: pd.Series, max_lag: int = 60, threshold: float = 0.3):
-    """
-    Very simple seasonality detection via ACF peaks.
-    Returns whether seasonal and a guessed period.
-    """
-    nlags = min(max_lag, len(y) // 2)
-    ac_vals = acf(y, nlags=nlags)
-    # ignore lag 0
-    ac_vals[0] = 0.0
-
-    peak_lag = int(np.argmax(ac_vals))
-    peak_val = ac_vals[peak_lag]
-
-    is_seasonal = peak_val > threshold and peak_lag > 1
+    # pick lag with highest autocorrelation
+    best_lag = int(lags[np.argmax(ac_values)])
+    is_seasonal = ac_values.max() > 0.3  # heuristic
 
     return {
         "seasonal": bool(is_seasonal),
-        "period_guess": int(peak_lag),
-        "peak_autocorr": float(peak_val),
+        "period_guess": int(best_lag),
     }
+``

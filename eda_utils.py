@@ -31,22 +31,48 @@ def plot_histogram(y: pd.Series):
     return fig
 
 
-def plot_acf_pacf(y: pd.Series, lags: int = 40):
-    ac_vals = acf(y, nlags=min(lags, len(y) - 1))
-    pac_vals = pacf(y, nlags=min(lags, len(y) - 1), method="yw")
+def plot_acf_pacf(y, lags=40):
+    from statsmodels.tsa.stattools import acf, pacf
+
+    # Ensure series is long enough
+    y = pd.Series(y).dropna()
+    if len(y) < 10:
+        fig, ax = plt.subplots(figsize=(10, 2))
+        ax.text(0.5, 0.5, "Not enough data for ACF/PACF", ha="center")
+        ax.set_axis_off()
+        return fig
+
+    # Safe ACF/PACF computation
+    try:
+        ac_vals = acf(y, nlags=min(lags, len(y) // 2), fft=False)
+        pac_vals = pacf(y, nlags=min(lags, len(y) // 2), method='ywunbiased')
+    except Exception as e:
+        fig, ax = plt.subplots(figsize=(10, 2))
+        ax.text(0.5, 0.5, f"ACF/PACF failed: {e}", ha="center")
+        ax.set_axis_off()
+        return fig
+
+    # Clean arrays (remove NaN, keep same length)
+    ac_vals = np.nan_to_num(ac_vals)
+    pac_vals = np.nan_to_num(pac_vals)
+
+    x_ac = np.arange(len(ac_vals)).astype(float)
+    x_pac = np.arange(len(pac_vals)).astype(float)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
-    axes[0].stem(range(len(ac_vals)), ac_vals, use_line_collection=True)
-    axes[0].set_title("Autocorrelation (ACF)")
-    axes[0].set_xlabel("Lag")
+    # ACF
+    axes[0].stem(x_ac, ac_vals, linefmt='b-', markerfmt='bo', basefmt='k-')
+    axes[0].set_title("ACF")
+    axes[0].grid(True)
 
-    axes[1].stem(range(len(pac_vals)), pac_vals, use_line_collection=True)
-    axes[1].set_title("Partial Autocorrelation (PACF)")
-    axes[1].set_xlabel("Lag")
+    # PACF
+    axes[1].stem(x_pac, pac_vals, linefmt='r-', markerfmt='ro', basefmt='k-')
+    axes[1].set_title("PACF")
+    axes[1].grid(True)
 
-    fig.tight_layout()
     return fig
+
 
 
 # -------------------------------

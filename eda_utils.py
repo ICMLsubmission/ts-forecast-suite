@@ -31,19 +31,48 @@ def plot_histogram(y: pd.Series):
     return fig
 
 
-def plot_acf_pacf(y: pd.Series, lags: int = 40):
+def plot_acf_pacf(y, lags=40):
     """
-    ACF & PACF using statsmodels' built-in plotting functions.
-    This avoids matplotlib stem() quirks and is much more robust.
+    Bulletproof ACF/PACF plotting that NEVER calls matplotlib.stem()
+    Uses statsmodels' built-in functions.
     """
+
+    import warnings
+    warnings.filterwarnings("ignore")
+
+    from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
     y = pd.Series(y).dropna()
-    if len(y) < 10:
-        fig, ax = plt.subplots(figsize=(8, 2))
-        ax.text(0.5, 0.5, "Not enough data for ACF/PACF (need >= 10 points).",
+
+    # Not enough data
+    if len(y) < 15:
+        fig, ax = plt.subplots(figsize=(6, 2))
+        ax.text(0.5, 0.5, "Not enough data for ACF/PACF\n(need ≥ 15 points)",
                 ha="center", va="center")
         ax.set_axis_off()
-        fig.tight_layout()
         return fig
+
+    # Cap lags safely
+    lags = min(lags, len(y)//2)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    try:
+        plot_acf(y, lags=lags, ax=axes[0])
+        axes[0].set_title("ACF")
+    except Exception as e:
+        axes[0].text(0.5, 0.5, f"ACF error: {e}", ha="center")
+        axes[0].set_axis_off()
+
+    try:
+        plot_pacf(y, lags=lags, method="ywm", ax=axes[1])
+        axes[1].set_title("PACF")
+    except Exception as e:
+        axes[1].text(0.5, 0.5, f"PACF error: {e}", ha="center")
+        axes[1].set_axis_off()
+
+    fig.tight_layout()
+    return fig
 
     max_lags = min(lags, len(y) // 2)
 
